@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>サイゼ帰りを阻止せよ！</title>
-<meta name="description" content="サイゼを抜け出した2人より先にホテルに着け！チャリ連打ミニゲーム">
+<meta name="description" content="サイゼを抜け出した2人より先にあいつの家に着け！チャリ連打ミニゲーム">
 <meta name="theme-color" content="#14122b">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -12,7 +12,7 @@
     font-family: "Hiragino Maru Gothic ProN", "Hiragino Sans", "Meiryo", sans-serif;
     -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
   #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
-  #stage { position: relative; }
+  #stage { position: relative; --s: 1; }
   canvas { display: block; touch-action: none; border-radius: 12px; box-shadow: 0 0 40px #ff4fa333; }
   .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
     justify-content: center; gap: 14px; padding: 24px; text-align: center;
@@ -31,6 +31,21 @@
   #resText { font-size: 15px; line-height: 1.7; }
   .win #resTitle { color: #6fffb0; text-shadow: 0 0 14px #2bd47a; }
   .lose #resTitle { color: #ff6fb5; text-shadow: 0 0 14px #ff4fa3; }
+
+  /* on-screen controls (sized in game units via --s) */
+  #ctrl { position: absolute; left: 0; right: 0; bottom: 0; height: calc(110px * var(--s));
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 calc(14px * var(--s)); pointer-events: none; }
+  #ctrl button { pointer-events: auto; touch-action: none; padding: 0; display: flex; align-items: center; justify-content: center; }
+  .steer { display: flex; gap: calc(10px * var(--s)); }
+  .arrow { width: calc(62px * var(--s)); height: calc(62px * var(--s)); font-size: calc(24px * var(--s));
+    background: #ffffff22; box-shadow: 0 calc(4px * var(--s)) 0 #00000066; border: 2px solid #ffffff44; }
+  #bPedal { width: calc(96px * var(--s)); height: calc(96px * var(--s)); font-size: calc(22px * var(--s));
+    background: radial-gradient(circle at 35% 30%, #ff8ccc, #ff4fa3 60%, #c8317d);
+    box-shadow: 0 calc(6px * var(--s)) 0 #8c1f55, 0 0 calc(20px * var(--s)) #ff4fa388; }
+  #ctrl button.on { transform: translateY(calc(4px * var(--s))) scale(.95); filter: brightness(1.25); box-shadow: none; }
+  #bMute { width: calc(40px * var(--s)); height: calc(40px * var(--s)); font-size: calc(18px * var(--s));
+    background: #00000066; box-shadow: none; align-self: flex-end; margin-bottom: calc(12px * var(--s)); }
 </style>
 </head>
 <body>
@@ -38,19 +53,29 @@
   <div id="stage">
     <canvas id="c"></canvas>
 
+    <div id="ctrl" class="hidden">
+      <div class="steer">
+        <button id="bL" class="arrow" aria-label="左へ">◀</button>
+        <button id="bR" class="arrow" aria-label="右へ">▶</button>
+      </div>
+      <button id="bMute" aria-label="音のオン・オフ">🔊</button>
+      <button id="bPedal">漕ぐ！</button>
+    </div>
+
     <div id="title" class="overlay">
       <h1>🚲 サイゼ帰りを<br>阻止せよ！</h1>
       <p class="story">
         みんなでサイゼで飲んでたのに、<br>
         トイレから戻ったら<b>あの2人</b>がいない…<br>
-        テーブルには「先に帰るね♡」のメモ。<br>
-        向かう先は…駅前の<b>ホテル</b>！？<br>
+        テーブルには「うちで飲み直すね♡」のメモ。<br>
+        向かう先は…<b>あいつの一人暮らしの部屋</b>！？<br>
         <b>チャリで先回りして阻止しろ！</b>
       </p>
       <p class="how">
-        📱 タップ連打で漕ぐ／指を左右にスライドでよける<br>
+        📱 「漕ぐ！」ボタン連打／◀ ▶ でよける<br>
         ⌨️ スペース連打で漕ぐ／← → でよける<br>
-        🥤 ドリンクバーで加速！ぶつかると転倒…
+        🥤 ドリンクバーで加速！ぶつかると転倒…<br>
+        🔊 音が出ます（iPhoneはマナーモード解除）
       </p>
       <div class="btns">
         <button data-diff="0">かんたん<small>2人はのんびり歩き</small></button>
@@ -75,8 +100,8 @@
 (() => {
   const W = 360, H = 640;
   const PX = 20;              // 1m = 20px
-  const PY = 520;             // player screen y
-  const GOAL = 500;           // hotel at 500m
+  const PY = 450;             // player screen y (above the control bar)
+  const GOAL = 500;           // his apartment at 500m
   const ROAD_L = 50, ROAD_R = 310;
   const DIFFS = [
     { name: 'かんたん', coupleStart: 150, time: 72, gap: [20, 30] },
@@ -98,14 +123,148 @@
     ctx.setTransform(s * dpr, 0, 0, s * dpr, 0, 0);
     $('stage').style.width = W * s + 'px';
     $('stage').style.height = H * s + 'px';
+    $('stage').style.setProperty('--s', s);
     fit.scale = s;
   }
   window.addEventListener('resize', fit);
   fit();
 
+  // ---------- sound (all synthesized with WebAudio) ----------
+  const snd = (() => {
+    let ac = null, master, music, sfx, timer = null, step = 0, next = 0;
+    let muted = false;
+    try { muted = localStorage.getItem('muted') === '1'; } catch (e) {}
+    const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+
+    function init() {
+      if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      ac = new AC();
+      const comp = ac.createDynamicsCompressor();
+      comp.connect(ac.destination);
+      master = ac.createGain(); master.gain.value = muted ? 0 : 0.8; master.connect(comp);
+      music = ac.createGain(); music.gain.value = 0.55; music.connect(master);
+      sfx = ac.createGain(); sfx.gain.value = 0.9; sfx.connect(master);
+    }
+
+    function tone(freq, t, dur, type, vol, dest, opts = {}) {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = type; o.frequency.setValueAtTime(freq, t);
+      if (opts.slideTo) o.frequency.exponentialRampToValueAtTime(opts.slideTo, t + dur);
+      if (opts.vibrato) {
+        const l = ac.createOscillator(), lg = ac.createGain();
+        l.frequency.value = 6; lg.gain.value = freq * 0.03;
+        l.connect(lg).connect(o.frequency); l.start(t); l.stop(t + dur + 0.05);
+      }
+      let out = o;
+      if (opts.lp) { const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = opts.lp; o.connect(f); out = f; }
+      out.connect(g); g.connect(dest);
+      const a = opts.attack || 0.005;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(vol, t + a);
+      g.gain.setValueAtTime(vol, t + Math.max(a, dur * (opts.hold || 0.3)));
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.start(t); o.stop(t + dur + 0.05);
+    }
+    let noiseBuf = null;
+    function noise(t, dur, vol, hp, dest) {
+      if (!noiseBuf) {
+        noiseBuf = ac.createBuffer(1, ac.sampleRate * 0.5, ac.sampleRate);
+        const d = noiseBuf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      }
+      const s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+      s.buffer = noiseBuf; f.type = 'highpass'; f.frequency.value = hp;
+      s.connect(f).connect(g).connect(dest);
+      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      s.start(t); s.stop(t + dur + 0.02);
+    }
+    function kick(t, vol) {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.12);
+      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+      o.connect(g).connect(music); o.start(t); o.stop(t + 0.2);
+    }
+
+    // chase loop: A minor, Am - G - F - E, speeds up as the couple nears the door
+    const BARS = [{ root: 45, q: [0, 3, 7] }, { root: 43, q: [0, 4, 7] }, { root: 41, q: [0, 4, 7] }, { root: 40, q: [0, 4, 7] }];
+    const LEAD = [69, -1, 72, -1, 71, 69, -1, 68, 69, -1, 76, -1, 74, 72, 71, -1];
+    let tension = 0;
+    function playStep(s, t) {
+      const bar = BARS[(s >> 4) & 3], i = s & 15;
+      if (i % 4 === 0) kick(t, 0.9);
+      if (i === 4 || i === 12) noise(t, 0.14, 0.35, 1200, music);
+      if (i % 2 === 0 || tension > 0.6) noise(t, 0.03, i % 2 ? 0.08 : 0.14, 7000, music);
+      if (i % 2 === 0) {
+        const n = bar.root + (i % 8 === 4 ? 12 : 0);
+        tone(mtof(n - 12), t, 0.16, 'sawtooth', 0.22, music, { lp: 600 });
+      }
+      const arp = bar.root + 24 + [...bar.q, 12][i % 4];
+      tone(mtof(arp), t, 0.09, 'square', 0.035, music, { lp: 3000 });
+      if (tension > 0.35 && LEAD[i] > 0 && (s >> 4) % 2 === 1) {
+        tone(mtof(LEAD[i] + ((s >> 4) === 3 ? -1 : 0)), t, 0.14, 'triangle', 0.09, music);
+      }
+      // alarm-like stab when it gets really close
+      if (tension > 0.8 && i === 0) tone(mtof(81), t, 0.25, 'square', 0.05, music, { slideTo: mtof(84) });
+    }
+    function sched() {
+      const bpm = 140 + 50 * tension;
+      while (next < ac.currentTime + 0.12) {
+        playStep(step, next);
+        next += 60 / bpm / 4;
+        step = (step + 1) % 64;
+      }
+    }
+    function startBGM() {
+      if (!ac) return;
+      stopBGM();
+      step = 0; next = ac.currentTime + 0.05; tension = 0;
+      timer = setInterval(sched, 25);
+    }
+    function stopBGM() { if (timer) clearInterval(timer); timer = null; }
+
+    function seq(notes, type, vol, opts) {
+      if (!ac) return;
+      const t0 = ac.currentTime + 0.05;
+      for (const [m, at, dur] of notes) tone(mtof(m), t0 + at, dur, type, vol, sfx, opts);
+    }
+    function win() {
+      // triumphant fanfare in C major
+      const b = 0.13;
+      seq([[67, 0, .12], [67, b, .12], [67, b * 2, .12], [72, b * 3, .5], [64, b * 7, .2], [67, b * 8, .2], [72, b * 9, .2],
+           [76, b * 10, .25], [74, b * 12, .2], [76, b * 13, .2], [79, b * 14, 1.1]], 'square', 0.08);
+      seq([[48, 0, .4], [48, b * 3, .5], [53, b * 7, .4], [55, b * 10, .4], [48, b * 14, 1.1]], 'triangle', 0.2);
+      seq([[72, b * 14, 1.1], [76, b * 14, 1.1]], 'triangle', 0.08);
+      if (ac) for (let k = 0; k < 4; k++) noise(ac.currentTime + 0.05 + b * 14 + k * 0.05, 0.4, 0.15, 5000, sfx);
+    }
+    function lose() {
+      // sad trombone: wah wah wah wahhhh
+      seq([[55, 0, .45], [54, .5, .45], [53, 1.0, .45]], 'sawtooth', 0.12, { lp: 1200, attack: 0.04, hold: 0.7 });
+      seq([[52, 1.5, 1.6]], 'sawtooth', 0.12, { lp: 1200, attack: 0.04, hold: 0.7, vibrato: true });
+    }
+    function crash() {
+      if (!ac) return;
+      const t = ac.currentTime;
+      noise(t, 0.25, 0.6, 200, sfx);
+      tone(180, t, 0.25, 'square', 0.12, sfx, { slideTo: 60 });
+    }
+    function item() { seq([[72, 0, .08], [76, .06, .08], [79, .12, .08], [84, .18, .2]], 'square', 0.07); }
+    function pass() { seq([[76, 0, .1], [81, .1, .25]], 'triangle', 0.15); }
+    function beep(high) { seq([[high ? 84 : 72, 0, high ? .4 : .15]], 'square', 0.08); }
+    function setTension(x) { tension = Math.max(0, Math.min(1, x)); }
+    function toggle() {
+      muted = !muted;
+      try { localStorage.setItem('muted', muted ? '1' : '0'); } catch (e) {}
+      if (master) master.gain.value = muted ? 0 : 0.8;
+      return muted;
+    }
+    return { init, startBGM, stopBGM, win, lose, crash, item, pass, beep, setTension, toggle, get muted() { return muted; } };
+  })();
+
   // ---------- state ----------
   let state = 'title', diff = 1, D = DIFFS[1];
-  let p, couple, obs, fx, nextSpawn, t, countdown, endT, result, passedCouple, shake;
+  let p, couple, obs, fx, nextSpawn, t, countdown, endT, result, passedCouple, shake, lastBeep;
   const keys = {};
   let pointerX = null;
 
@@ -113,7 +272,7 @@
     p = { m: 0, x: W / 2, v: 0, stun: 0, inv: 0, boost: 0, crank: 0, tilt: 0, crashes: 0 };
     couple = { m: D.coupleStart, v: (GOAL - D.coupleStart) / D.time };
     obs = []; fx = [];
-    nextSpawn = 28; t = 0; countdown = 3; endT = 0; result = null; passedCouple = false; shake = 0;
+    nextSpawn = 28; t = 0; countdown = 3; endT = 0; result = null; passedCouple = false; shake = 0; lastBeep = 4;
   }
   reset();
 
@@ -126,6 +285,7 @@
   window.addEventListener('keydown', e => {
     if (['Space', 'ArrowUp', 'KeyW', 'Enter'].includes(e.code)) { e.preventDefault(); if (!e.repeat) pedal(); }
     if (['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD'].includes(e.code)) { e.preventDefault(); keys[e.code] = true; }
+    if (e.code === 'KeyM') muteBtn();
   });
   window.addEventListener('keyup', e => { keys[e.code] = false; });
   const toLocalX = e => (e.clientX - cv.getBoundingClientRect().left) / fit.scale;
@@ -134,6 +294,22 @@
   ['pointerup', 'pointercancel', 'pointerleave'].forEach(n => cv.addEventListener(n, () => { pointerX = null; }));
   document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
   document.addEventListener('dblclick', e => e.preventDefault());
+
+  // on-screen buttons
+  function hold(btn, key) {
+    const on = e => { e.preventDefault(); keys[key] = true; btn.classList.add('on'); };
+    const off = () => { keys[key] = false; btn.classList.remove('on'); };
+    btn.addEventListener('pointerdown', on);
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(n => btn.addEventListener(n, off));
+  }
+  hold($('bL'), 'btnL');
+  hold($('bR'), 'btnR');
+  const bp = $('bPedal');
+  bp.addEventListener('pointerdown', e => { e.preventDefault(); pedal(); bp.classList.add('on'); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(n => bp.addEventListener(n, () => bp.classList.remove('on')));
+  function muteBtn() { $('bMute').textContent = snd.toggle() ? '🔇' : '🔊'; }
+  $('bMute').textContent = snd.muted ? '🔇' : '🔊';
+  $('bMute').addEventListener('click', muteBtn);
 
   // ---------- spawning ----------
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -155,15 +331,20 @@
   // ---------- update ----------
   function update(dt) {
     if (state === 'play') {
-      if (countdown > 0) { countdown -= dt; return; }
+      if (countdown > 0) {
+        countdown -= dt;
+        const n = Math.ceil(countdown);
+        if (n < lastBeep) { lastBeep = n; snd.beep(n === 0); }
+        return;
+      }
       t += dt;
 
       // steering
       let sx = 0;
-      if (keys.ArrowLeft || keys.KeyA) sx -= 1;
-      if (keys.ArrowRight || keys.KeyD) sx += 1;
+      if (keys.ArrowLeft || keys.KeyA || keys.btnL) sx -= 1;
+      if (keys.ArrowRight || keys.KeyD || keys.btnR) sx += 1;
       const steerSpd = 260;
-      if (pointerX !== null) {
+      if (pointerX !== null && !sx) {
         const d = pointerX - p.x;
         p.x += Math.sign(d) * Math.min(Math.abs(d), steerSpd * 1.4 * dt);
         sx = Math.max(-1, Math.min(1, d / 40));
@@ -179,9 +360,11 @@
       p.m += p.v * dt;
       p.crank += p.v * dt * 1.6;
       couple.m = Math.min(GOAL, couple.m + couple.v * dt);
+      snd.setTension((couple.m - D.coupleStart) / (GOAL - D.coupleStart));
 
       if (!passedCouple && p.m > couple.m) {
         passedCouple = true;
+        snd.pass();
         fx.push({ text: '追い抜いた！', x: W / 2, y: 260, life: 1.4, color: '#6fffb0', size: 26 });
       }
 
@@ -202,9 +385,11 @@
         if (dx * dx + dy * dy < (o.r + 13) ** 2) {
           if (o.item) {
             o.dead = true; p.boost = 2.5; p.v = Math.min(16, p.v + 5);
+            snd.item();
             fx.push({ text: 'ドリンクバー！', x: p.x, y: PY - 40, life: 1, color: '#7fd8ff', size: 18 });
           } else if (p.inv <= 0 && p.stun <= 0) {
             o.dead = !o.car; p.stun = 1.1; p.inv = 2.2; p.v = 0; p.crashes++; shake = 0.35;
+            snd.crash();
             fx.push({ text: pick(['いってぇ！', 'ぐわっ', 'すみません！', 'あぶねっ']), x: p.x, y: PY - 40, life: 1, color: '#ffd84f', size: 18 });
             if (navigator.vibrate) navigator.vibrate(120);
           }
@@ -217,7 +402,7 @@
       else if (couple.m >= GOAL) finish(false);
     } else if (state === 'end') {
       endT += dt;
-      if (endT > 3.6 && $('result').classList.contains('hidden')) showResult();
+      if (endT > 4 && $('result').classList.contains('hidden')) showResult();
     }
     shake = Math.max(0, shake - dt);
     for (const f of fx) { f.life -= dt; f.y -= 30 * dt; }
@@ -226,9 +411,11 @@
 
   function finish(win) {
     state = 'end'; endT = 0;
+    $('ctrl').classList.add('hidden');
+    snd.stopBGM();
+    win ? snd.win() : snd.lose();
     const coupleETA = (GOAL - couple.m) / couple.v;
-    const playerETA = p.v > 0.5 ? (GOAL - p.m) / Math.max(p.v, 3) : 99;
-    result = { win, time: t, margin: win ? coupleETA : playerETA, crashes: p.crashes };
+    result = { win, time: t, margin: coupleETA, left: Math.ceil(GOAL - p.m), crashes: p.crashes };
   }
 
   function showResult() {
@@ -236,10 +423,10 @@
     $('result').className = 'overlay ' + (r.win ? 'win' : 'lose');
     if (r.win) {
       $('resTitle').textContent = '阻止成功！🎉';
-      $('resText').innerHTML = `「ちょっと待ったーー！！」<br>2人より <b>${r.margin.toFixed(1)}秒</b> 早く到着！<br>タイム ${r.time.toFixed(1)}秒／転倒 ${r.crashes}回<br>（難易度：${D.name}）<br>今夜の平和は守られた。`;
+      $('resText').innerHTML = `「ちょっと待ったーー！！」<br>2人より <b>${r.margin.toFixed(1)}秒</b> 早く到着！<br>タイム ${r.time.toFixed(1)}秒／転倒 ${r.crashes}回<br>（難易度：${D.name}）<br>結局3人で朝まで桃鉄した。`;
     } else {
       $('resTitle').textContent = '間に合わなかった…';
-      $('resText').innerHTML = `2人はホテルに消えていった。<br>あと <b>${Math.min(r.margin, 99).toFixed(1)}秒</b> 早ければ…<br>転倒 ${r.crashes}回（難易度：${D.name}）<br>今夜は一人でドリンクバー。`;
+      $('resText').innerHTML = `2人はあいつの部屋に消えていった。<br>あいつの家まで あと <b>${r.left}m</b> だったのに…<br>転倒 ${r.crashes}回（難易度：${D.name}）<br>今夜は一人でドリンクバー。`;
     }
   }
 
@@ -271,10 +458,9 @@
     const off = (camM * PX) % 60;
     for (let y = -60 + off; y < H; y += 60) ctx.fillRect(W / 2 - 3, y, 6, 30);
     // roadside: buildings, lights
-    for (let i = Math.floor(camM / 6) - 2; i < camM / 6 + 6; i++) {
+    for (let i = Math.floor(camM / 6) - 2; i < camM / 6 + 8; i++) {
       const sy = PY - (i * 6 - camM) * PX;
       const seed = Math.abs(Math.sin(i * 12.9898) * 43758.5453) % 1;
-      // buildings
       ctx.fillStyle = seed > 0.5 ? '#25223f' : '#2a2050';
       ctx.fillRect(0, sy - 110, ROAD_L - 16, 100);
       ctx.fillRect(ROAD_R + 16, sy - 60, W - ROAD_R - 16, 100);
@@ -282,7 +468,6 @@
       ctx.fillRect(10, sy - 95, 8, 8); ctx.fillRect(22, sy - 70, 8, 8);
       ctx.fillRect(ROAD_R + 24, sy - 45, 8, 8);
       if (i % 2 === 0) {
-        // street light glow
         const g = ctx.createRadialGradient(ROAD_L - 6, sy, 2, ROAD_L - 6, sy, 70);
         g.addColorStop(0, '#fff3b055'); g.addColorStop(1, '#fff3b000');
         ctx.fillStyle = g; ctx.fillRect(ROAD_L - 80, sy - 70, 160, 140);
@@ -297,49 +482,55 @@
       text('サイゼ', ROAD_R + 27, sy0 - 4, 11, '#fff', 'center');
       emoji('🍝', ROAD_R + 27, sy0 + 26, 20);
     }
-    // goal: hotel
+    // goal: his apartment
     const sg = PY - (GOAL - camM) * PX;
-    if (sg > -200 && sg < H + 50) drawHotel(sg);
+    if (sg > -200 && sg < H + 50) drawHome(sg);
   }
   function pick2(i, a) { return a[Math.abs(i * 7) % a.length]; }
 
-  function drawHotel(gy, lit) {
-    // hotel spanning across top of road at gy
-    ctx.fillStyle = '#3a1f4a'; ctx.fillRect(20, gy - 170, W - 40, 150);
-    ctx.fillStyle = '#ff4fa3'; ctx.shadowColor = '#ff4fa3'; ctx.shadowBlur = 16;
-    text('HOTEL ミラノ♡', W / 2, gy - 150, 22, '#ffb3d9', 'center', false);
-    ctx.shadowBlur = 0;
-    for (let r = 0; r < 3; r++) for (let c = 0; c < 6; c++) {
-      const on = lit ? lit(r, c) : ((r * 7 + c * 3) % 4 !== 0);
-      ctx.fillStyle = on === 'pink' ? '#ff6fb5' : on ? '#ffd86b' : '#1a1028';
-      ctx.fillRect(48 + c * 46, gy - 125 + r * 30, 28, 18);
+  // his room is 2F, 3rd door (203)
+  const HIS = { r: 0, c: 2 };
+  const winX = c => 62 + c * 66, winY = (gy, r) => gy - 140 + r * 56;
+  function drawHome(gy, lit) {
+    // two-story wooden apartment
+    ctx.fillStyle = '#4a3a2e'; ctx.fillRect(36, gy - 172, W - 72, 152);
+    ctx.fillStyle = '#5c4838'; ctx.fillRect(28, gy - 182, W - 56, 14);           // roof edge
+    ctx.fillStyle = '#2a2018'; ctx.fillRect(36, gy - 98, W - 72, 6);             // 2F corridor
+    ctx.strokeStyle = '#8a7a6a'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(36, gy - 104); ctx.lineTo(W - 36, gy - 104); ctx.stroke();  // railing
+    text('メゾン・ド・ドリア', W / 2, gy - 188, 14, '#ffe2b0', 'center');
+    for (let r = 0; r < 2; r++) for (let c = 0; c < 4; c++) {
+      const his = r === HIS.r && c === HIS.c;
+      const on = lit ? lit(r, c) : (his ? false : (r * 5 + c * 7) % 3 !== 0);
+      const x = winX(c), y = winY(gy, r);
+      ctx.fillStyle = '#2a2018'; ctx.fillRect(x - 2, y - 2, 48, 34);              // door frame
+      ctx.fillStyle = on === 'pink' ? '#ff6fb5' : on ? '#ffd86b' : '#140d0a';
+      ctx.fillRect(x, y, 22, 30);                                                  // window
+      ctx.fillStyle = '#6a5848'; ctx.fillRect(x + 26, y, 18, 30);                 // door
+      text(`${r ? 1 : 2}0${c + 1}`, x + 35, y + 6, 7, '#ddd', 'center', false);
+      if (his) { text('あいつの部屋', x + 22, y - 12, 10, '#ffb3d9', 'center'); }
     }
-    // door
-    ctx.fillStyle = '#ff6fb5aa'; ctx.fillRect(W / 2 - 26, gy - 42, 52, 24);
-    ctx.fillStyle = '#ffffff22'; ctx.fillRect(W / 2 - 50, gy - 18, 100, 18);
+    // stairs + entrance
+    ctx.strokeStyle = '#8a7a6a'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(W - 50, gy - 20); ctx.lineTo(W - 90, gy - 98); ctx.stroke();
+    ctx.fillStyle = '#ffffff22'; ctx.fillRect(W / 2 - 50, gy - 20, 100, 20);
+    emoji('📮', 50, gy - 32, 16);
   }
 
   function drawPlayer(x, y, tilt, crank, stun) {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(stun > 0 ? Math.sin(stun * 30) * 0.5 : tilt);
-    // wheels
     ctx.fillStyle = '#111';
     ctx.fillRect(-3, -30, 6, 18); ctx.fillRect(-3, 12, 6, 18);
-    // frame
     ctx.fillStyle = '#ff4fa3'; ctx.fillRect(-2, -16, 4, 32);
-    // handlebar
     ctx.fillStyle = '#ccc'; ctx.fillRect(-13, -18, 26, 3);
-    // legs (pedaling)
     const l = Math.sin(crank) * 6;
     ctx.fillStyle = '#2e5bd8';
     ctx.fillRect(-9, -2 + l, 5, 14); ctx.fillRect(4, -2 - l, 5, 14);
-    // body
     ctx.fillStyle = '#f2f2f2'; ctx.beginPath(); ctx.ellipse(0, 0, 10, 8, 0, 0, Math.PI * 2); ctx.fill();
-    // arms
     ctx.strokeStyle = '#f2c9a0'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.moveTo(-8, -3); ctx.lineTo(-12, -16); ctx.moveTo(8, -3); ctx.lineTo(12, -16); ctx.stroke();
-    // head
     ctx.fillStyle = '#3a2a1a'; ctx.beginPath(); ctx.arc(0, -6, 7, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
@@ -357,14 +548,14 @@
     const x0 = 24, x1 = W - 40, y = 26;
     ctx.fillStyle = '#ffffff22'; ctx.fillRect(x0, y - 3, x1 - x0, 6);
     emoji('🍝', x0 - 8, y, 16);
-    emoji('🏨', x1 + 18, y, 20);
+    emoji('🏠', x1 + 18, y, 20);
     const px = x0 + (x1 - x0) * Math.min(1, p.m / GOAL);
     const cx = x0 + (x1 - x0) * Math.min(1, couple.m / GOAL);
     emoji('👫', cx, y - 2, 18);
     emoji('🚲', px, y + 2, 18);
     const kmh = Math.round(p.v * 3.6);
     text(`${kmh} km/h`, 14, 50, 13, p.boost > 0 ? '#7fd8ff' : '#fff', 'left');
-    text(`ホテルまで ${Math.max(0, Math.ceil(GOAL - p.m))}m`, W - 14, 50, 13, '#ffb3d9', 'right');
+    text(`あいつの家まで ${Math.max(0, Math.ceil(GOAL - p.m))}m`, W - 14, 50, 13, '#ffb3d9', 'right');
     const lead = p.m - couple.m;
     text(lead >= 0 ? `2人より ${lead.toFixed(0)}m 前` : `2人まで あと${(-lead).toFixed(0)}m`, W / 2, 72, 14, lead >= 0 ? '#6fffb0' : '#ffd84f');
   }
@@ -378,7 +569,6 @@
       const sy = PY - (o.m - p.m) * PX;
       if (sy < -40 || sy > H + 40) continue;
       if (o.car) {
-        // crosswalk
         ctx.fillStyle = '#ffffff30';
         for (let x = ROAD_L + 6; x < ROAD_R; x += 22) ctx.fillRect(x, sy - 16, 12, 32);
         emoji(o.e, o.x, sy, 40, o.vx > 0);
@@ -392,10 +582,8 @@
         if (o.text) text(o.text, o.x, sy - 24, 10, '#ffd84f');
       }
     }
-    // couple
     const cy = PY - (couple.m - p.m) * PX;
     if (cy > -40 && cy < H + 40) drawCouple(W / 2 + 40, cy);
-    // player
     if (!(p.inv > 0 && p.stun <= 0 && Math.floor(p.inv * 12) % 2)) drawPlayer(p.x, PY, p.tilt, p.crank, p.stun);
     if (p.boost > 0) emoji('💨', p.x, PY + 40, 20);
     ctx.restore();
@@ -404,20 +592,18 @@
     for (const f of fx) { ctx.globalAlpha = Math.min(1, f.life * 2); text(f.text, f.x, f.y, f.size, f.color); ctx.globalAlpha = 1; }
 
     if (countdown > 0) {
-      const n = Math.ceil(countdown);
-      text(n > 3 ? '' : String(n), W / 2, H / 2 - 40, 80, '#fff');
-      text('連打で漕げ！', W / 2, H / 2 + 30, 22, '#ffb3d9');
+      text(String(Math.ceil(countdown)), W / 2, H / 2 - 60, 80, '#fff');
+      text('「漕ぐ！」を連打！', W / 2, H / 2 + 10, 22, '#ffb3d9');
     } else if (t < 2) {
       ctx.globalAlpha = 1 - t / 2;
-      text('GO!!', W / 2, H / 2 - 40, 80, '#6fffb0');
+      text('GO!!', W / 2, H / 2 - 60, 80, '#6fffb0');
       ctx.globalAlpha = 1;
     } else if (p.v < 2 && p.stun <= 0) {
-      if (Math.floor(performance.now() / 300) % 2) text('連打！連打！', W / 2, H - 60, 20, '#ffd84f');
+      if (Math.floor(performance.now() / 300) % 2) text('連打！連打！', W / 2, H - 140, 20, '#ffd84f');
     }
   }
 
   function drawEnd() {
-    // night hotel front
     ctx.fillStyle = '#0d0b20'; ctx.fillRect(0, 0, W, H);
     for (let i = 0; i < 40; i++) {
       ctx.fillStyle = '#ffffff' + (i % 3 ? '44' : '99');
@@ -425,33 +611,30 @@
     }
     ctx.fillStyle = '#34324a'; ctx.fillRect(0, 470, W, 170);
     const T = endT;
+    const hx = winX(HIS.c) + 11, hy = winY(470, HIS.r) + 15;
     if (result.win) {
-      drawHotel(470);
-      // player blocks door
+      drawHome(470);
       drawPlayer(W / 2, 520, 0, 0, 0);
       const ccy = 700 - Math.min(T, 1.6) * 80;
       drawCouple(W / 2, ccy);
-      if (T > 0.3) {
-        bubble(W / 2, 400, 'ちょっと待ったーー！！');
-      }
+      if (T > 0.3) bubble(W / 2, 410, 'ちょっと待ったーー！！');
       if (T > 1.8) emoji('😳', W / 2 + 34, ccy - 10, 22);
-      if (T > 2.2) text('阻止成功！', W / 2, 140, 40, '#6fffb0');
+      if (T > 2.2) text('阻止成功！', W / 2, 160, 40, '#6fffb0');
     } else {
-      const inside = T > 1.2;
-      const pinkOn = T > 1.6 && T < 2.8;
-      drawHotel(470, (r, c) => (r === 1 && c === 3) ? (pinkOn ? 'pink' : false) : ((r * 7 + c * 3) % 4 !== 0));
-      if (!inside) drawCouple(W / 2, 520 - T * 40);
-      if (T > 1.6 && T < 3.4) {
-        ctx.globalAlpha = Math.max(0, 1 - (T - 1.6) / 1.8);
-        emoji('💕', 48 + 3 * 46 + 14, 470 - 95 - (T - 1.6) * 30, 22);
+      const inside = T > 1.4;
+      const pinkOn = T > 1.8 && T < 3.0;
+      drawHome(470, (r, c) => (r === HIS.r && c === HIS.c) ? (pinkOn ? 'pink' : false) : ((r * 5 + c * 7) % 3 !== 0));
+      if (!inside) drawCouple(W / 2 + 60 - T * 30, 520 - T * 60);   // heading up the stairs
+      if (T > 1.8 && T < 3.6) {
+        ctx.globalAlpha = Math.max(0, 1 - (T - 1.8) / 1.8);
+        emoji('💕', hx, hy - 30 - (T - 1.8) * 30, 22);
         ctx.globalAlpha = 1;
       }
-      if (T > 2.8) text('ﾌｯ…', 48 + 3 * 46 + 14, 470 - 140, 16, '#ffd84f');
-      // player arriving late
+      if (T > 3.0) text('ﾊﾟﾁｯ…', hx, hy - 30, 14, '#ffd84f');
       const py = 700 - Math.min(T, 2.2) * 70;
-      drawPlayer(W / 2 + 70, py, 0, T * 8, 0);
-      if (T > 2.2) emoji('😭', W / 2 + 95, py - 20, 22);
-      if (T > 2.4) text('間に合わなかった…', W / 2, 140, 30, '#ff6fb5');
+      drawPlayer(W / 2 - 60, py, 0, T * 8, 0);
+      if (T > 2.2) emoji('😭', W / 2 - 35, py - 20, 22);
+      if (T > 2.4) text('間に合わなかった…', W / 2, 160, 30, '#ff6fb5');
     }
   }
   function bubble(x, y, s) {
@@ -481,25 +664,33 @@
 
   // ---------- UI ----------
   function start(d) {
+    snd.init();
     diff = d; D = DIFFS[d];
     reset();
     state = 'play';
+    snd.startBGM();
     $('title').classList.add('hidden');
     $('result').classList.add('hidden');
+    $('ctrl').classList.remove('hidden');
   }
   document.querySelectorAll('[data-diff]').forEach(b => b.addEventListener('click', () => start(+b.dataset.diff)));
   $('retry').addEventListener('click', () => start(diff));
   $('toTitle').addEventListener('click', () => {
     state = 'title';
+    snd.stopBGM();
     $('result').classList.add('hidden');
     $('title').classList.remove('hidden');
   });
   $('share').addEventListener('click', () => {
     const s = result.win
       ? `サイゼ帰りの2人を${result.margin.toFixed(1)}秒差で阻止成功！🚲💨（難易度：${D.name}）`
-      : `サイゼ帰りの2人に間に合わなかった…あと${Math.min(result.margin, 99).toFixed(1)}秒…😭（難易度：${D.name}）`;
+      : `サイゼ帰りの2人に間に合わなかった…あと${result.left}m…😭（難易度：${D.name}）`;
     const url = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(s + ' #サイゼ帰りを阻止せよ\n' + location.href);
     window.open(url, '_blank', 'noopener');
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) snd.stopBGM();
+    else if (state === 'play') snd.startBGM();
   });
 })();
 </script>
