@@ -75,12 +75,13 @@
         📱 「漕ぐ！」ボタン連打／◀ ▶ でよける<br>
         ⌨️ スペース連打で漕ぐ／← → でよける<br>
         🥤 ドリンクバーで加速！ぶつかると転倒…<br>
+        🌬️ 向かい風・⛰️ 上り坂・🍌💧 でスピードダウン<br>
         🔊 音が出ます（iPhoneはマナーモード解除）
       </p>
       <div class="btns">
         <button data-diff="0">のんびりおさんぽ<small>2人は手つないでゆっくり</small></button>
         <button data-diff="1">そわそわ早歩き<small>2人はちょっと急ぎ足</small></button>
-        <button data-diff="2">まちきれない<small>障害物だらけ！ドリンクで巻き返せ</small></button>
+        <button data-diff="2">まちきれない<small>障害物だらけ＋強風＋坂道。ドリンクで巻き返せ</small></button>
       </div>
     </div>
 
@@ -104,9 +105,13 @@
   const GOAL = 320;           // his apartment at 320m
   const ROAD_L = 50, ROAD_R = 310;
   const DIFFS = [
-    { name: 'のんびりおさんぽ', coupleStart: 100, time: 50, gap: [20, 30], drink: 0.16, double: 0 },
-    { name: 'そわそわ早歩き',   coupleStart: 100, time: 35, gap: [16, 25], drink: 0.16, double: 0.1 },
-    { name: 'まちきれない',     coupleStart: 110, time: 31, gap: [9, 14],  drink: 0.24, double: 0.4 },
+    // wind: chance per second of a headwind gust / hills: number of uphill stretches
+    { name: 'のんびりおさんぽ', coupleStart: 100, time: 50, gap: [20, 30], drink: 0.16, double: 0, wind: 0, hills: 0,
+      pool: { cone: 5, walker: 4, drunk: 3, cat: 3, car: 4 } },
+    { name: 'そわそわ早歩き',   coupleStart: 100, time: 32, gap: [15, 23], drink: 0.16, double: 0.15, wind: 0.04, hills: 1,
+      pool: { cone: 4, walker: 3, drunk: 3, cat: 3, car: 4, banana: 3, puddle: 3, delivery: 2 } },
+    { name: 'まちきれない',     coupleStart: 110, time: 28, gap: [8, 13],  drink: 0.24, double: 0.4, wind: 0.09, hills: 2,
+      pool: { cone: 3, walker: 2, drunk: 2, cat: 2, car: 4, banana: 3, puddle: 3, delivery: 4, pigeon: 3, gang: 2 } },
   ];
 
   const cv = document.getElementById('c');
@@ -249,6 +254,12 @@
       noise(t, 0.25, 0.6, 200, sfx);
       tone(180, t, 0.25, 'square', 0.12, sfx, { slideTo: 60 });
     }
+    function wind() {
+      if (!ac) return;
+      const t = ac.currentTime;
+      for (let k = 0; k < 6; k++) noise(t + k * 0.3, 0.5, 0.18, 300 + k * 80, sfx);
+    }
+    function slip() { seq([[79, 0, .25]], 'triangle', 0.12, { slideTo: mtof(60) }); }
     function item() { seq([[72, 0, .08], [76, .06, .08], [79, .12, .08], [84, .18, .2]], 'square', 0.07); }
     function pass() { seq([[76, 0, .1], [81, .1, .25]], 'triangle', 0.15); }
     function beep(high) { seq([[high ? 84 : 72, 0, high ? .4 : .15]], 'square', 0.08); }
@@ -259,12 +270,12 @@
       if (master) master.gain.value = muted ? 0 : 0.8;
       return muted;
     }
-    return { init, startBGM, stopBGM, win, lose, crash, item, pass, beep, setTension, toggle, get muted() { return muted; } };
+    return { init, startBGM, stopBGM, win, lose, crash, item, wind, slip, pass, beep, setTension, toggle, get muted() { return muted; } };
   })();
 
   // ---------- state ----------
   let state = 'title', diff = 1, D = DIFFS[1];
-  let p, couple, obs, fx, nextSpawn, t, countdown, endT, result, passedCouple, shake, lastBeep;
+  let p, couple, obs, fx, nextSpawn, t, countdown, endT, result, passedCouple, shake, lastBeep, wind, hills = [];
   const keys = {};
   let pointerX = null;
 
@@ -273,7 +284,13 @@
     couple = { m: D.coupleStart, v: (GOAL - D.coupleStart) / D.time };
     obs = []; fx = [];
     nextSpawn = 28; t = 0; countdown = 3; endT = 0; result = null; passedCouple = false; shake = 0; lastBeep = 4;
+    wind = 0;
+    // uphill stretches, spread out so they never overlap
+    hills = [];
+    const seg = (GOAL - 100) / Math.max(1, D.hills);
+    for (let i = 0; i < D.hills; i++) { const s = 60 + i * seg + Math.random() * (seg - 40); hills.push([s, s + 28]); }
   }
+  const onHill = m => hills.some(([a, b]) => m >= a && m <= b);
   reset();
 
   // ---------- input ----------
@@ -314,22 +331,47 @@
   // ---------- spawning ----------
   const rand = (a, b) => a + Math.random() * (b - a);
   const pick = a => a[Math.floor(Math.random() * a.length)];
-  function spawn(m, x = rand(ROAD_L + 18, ROAD_R - 18), noCar) {
-    if (!noCar && Math.random() < D.drink) { obs.push({ m, x, e: '🥤', r: 14, item: true }); return; }
-    const r = Math.random() * (noCar ? 0.6 : 1);
-    if (r < 0.25) obs.push({ m, x, e: '🚧', r: 15 });
-    else if (r < 0.45) obs.push({ m, x, e: '🚶', r: 14, vx: pick([-35, 35]) });
-    else if (r < 0.6) obs.push({ m, x, e: '🕺', r: 15, wob: rand(0, 6), base: x, text: 'ヒック' });
-    else if (r < 0.8) obs.push({ m, x, e: '🐈', r: 11, vx: pick([-90, 90]) });
-    else {
+  // slow: speed multiplier on contact (no fall)
+  const MAKERS = {
+    cone:     (m, x) => ({ m, x, e: '🚧', r: 15 }),
+    walker:   (m, x) => ({ m, x, e: '🚶', r: 14, vx: pick([-35, 35]) }),
+    drunk:    (m, x) => ({ m, x, e: '🕺', r: 15, wob: rand(0, 6), base: x, text: 'ヒック' }),
+    cat:      (m, x) => ({ m, x, e: '🐈', r: 11, vx: pick([-90, 90]) }),
+    banana:   (m, x) => ({ m, x, e: '🍌', r: 11, slow: 0.35, say: 'ツルッ！' }),
+    puddle:   (m, x) => ({ m, x, puddle: true, r: 22, slow: 0.5, say: 'バシャッ' }),
+    delivery: (m, x) => ({ m: m + 8, x, e: '🛵', r: 17, vm: -7, rot: -Math.PI / 2, text: 'ﾌﾞｰﾝ' }),
+    pigeon:   (m, x) => ({ m, x, e: '🐦', r: 10, vx: pick([-70, 70]), flap: true }),
+  };
+  const SINGLE = ['cone', 'walker', 'drunk', 'cat', 'banana', 'puddle', 'delivery', 'pigeon'];
+  function spawn(m) {
+    const x = rand(ROAD_L + 18, ROAD_R - 18);
+    if (Math.random() < D.drink) { obs.push({ m, x, e: '🥤', r: 14, item: true }); return; }
+    const pool = Object.entries(D.pool);
+    let r = Math.random() * pool.reduce((s, [, w]) => s + w, 0), kind;
+    for (const [k, w] of pool) { if ((r -= w) < 0) { kind = k; break; } }
+    kind = kind || 'cone';
+    if (kind === 'car') {
       const fromL = Math.random() < 0.5;
       obs.push({ m, x: fromL ? -40 : W + 40, e: pick(['🚗', '🚕', '🚙']), r: 22, car: true, vx: (fromL ? 1 : -1) * rand(150, 200), active: false });
       return;
     }
+    if (kind === 'gang') {
+      // a row of drunk salarymen across the road with a single gap
+      const gapAt = Math.floor(rand(0, 4));
+      for (let i = 0; i < 4; i++) if (i !== gapAt) obs.push({ m, x: ROAD_L + 32 + i * 65, e: '🥴', r: 15, wob: rand(0, 6), base: ROAD_L + 32 + i * 65, amp: 10 });
+      obs.push({ m, x: W / 2, label: '酔っ払い集団', r: 0, deco: true });
+      return;
+    }
+    if (kind === 'pigeon') {
+      for (let i = 0; i < 3; i++) obs.push(MAKERS.pigeon(m + rand(-2, 2), Math.max(ROAD_L + 15, Math.min(ROAD_R - 15, x + rand(-40, 40)))));
+      return;
+    }
+    obs.push(MAKERS[kind](m, x));
     // harder modes: a second obstacle on the same row, leaving a gap to squeeze through
-    if (!noCar && Math.random() < D.double) {
-      const x2 = x < W / 2 ? rand(x + 90, ROAD_R - 18) : rand(ROAD_L + 18, x - 90);
-      spawn(m, x2, true);
+    if (Math.random() < D.double) {
+      const x2 = x < W / 2 ? Math.min(ROAD_R - 18, x + rand(90, 140)) : Math.max(ROAD_L + 18, x - rand(90, 140));
+      const k2 = pick(SINGLE.filter(k => D.pool[k] && k !== 'delivery'));
+      obs.push(MAKERS[k2](m, x2));
     }
   }
 
@@ -354,12 +396,24 @@
         p.x += Math.sign(d) * Math.min(Math.abs(d), steerSpd * 1.4 * dt);
         sx = Math.max(-1, Math.min(1, d / 40));
       } else p.x += sx * steerSpd * dt;
+      if (wind > 0) p.x += Math.sin(t * 1.7) * 40 * dt;   // gusts also push you sideways
       p.x = Math.max(ROAD_L + 12, Math.min(ROAD_R - 12, p.x));
       p.tilt += (sx * 0.25 - p.tilt) * Math.min(1, dt * 10);
 
+      // headwind gusts
+      if (wind > 0) wind -= dt;
+      else if (Math.random() < D.wind * dt) {
+        wind = rand(2.5, 4);
+        snd.wind();
+        fx.push({ text: '🌬️ 向かい風！', x: W / 2, y: 140, life: 1.6, color: '#bfe8ff', size: 24 });
+      }
+      const hill = onHill(p.m);
+      if (hill && !p.onHill) fx.push({ text: '⛰️ 上り坂！', x: W / 2, y: 170, life: 1.4, color: '#ffcf8a', size: 22 });
+      p.onHill = hill;
+
       // physics
       if (p.stun > 0) { p.stun -= dt; p.v = 0; }
-      p.v = Math.max(0, p.v - (0.35 * p.v + 0.6) * dt);
+      p.v = Math.max(0, p.v - (0.35 * p.v + 0.6 + (wind > 0 ? 2.6 : 0) + (hill ? 2.2 : 0)) * dt);
       p.boost = Math.max(0, p.boost - dt);
       p.inv = Math.max(0, p.inv - dt);
       p.m += p.v * dt;
@@ -383,15 +437,25 @@
       for (const o of obs) {
         const sy = PY - (o.m - p.m) * PX;
         if (o.car) { if (!o.active && sy > -30) o.active = true; if (o.active) o.x += o.vx * dt; }
-        else if (o.wob !== undefined) { o.wob += dt * 2.2; o.x = o.base + Math.sin(o.wob) * 45; }
-        else if (o.vx) { o.x += o.vx * dt; if (o.x < ROAD_L + 10 || o.x > ROAD_R - 10) o.vx *= -1; }
-        if (o.dead) continue;
+        else if (o.wob !== undefined) { o.wob += dt * 2.2; o.x = o.base + Math.sin(o.wob) * (o.amp || 45); }
+        else if (o.vx) {
+          if (o.flap && Math.random() < dt * 1.5) o.vx *= -1;
+          o.x += o.vx * dt; if (o.x < ROAD_L + 10 || o.x > ROAD_R - 10) o.vx *= -1;
+        }
+        if (o.vm && sy > -60) o.m += o.vm * dt;
+        if (o.dead || o.deco) continue;
         const dx = o.x - p.x, dy = sy - PY;
         if (dx * dx + dy * dy < (o.r + 13) ** 2) {
           if (o.item) {
             o.dead = true; p.boost = 2.5; p.v = Math.min(16, p.v + 5);
             snd.item();
             fx.push({ text: 'ドリンクバー！', x: p.x, y: PY - 40, life: 1, color: '#7fd8ff', size: 18 });
+          } else if (o.slow) {
+            if (p.inv <= 0) {
+              o.dead = !o.puddle; p.v *= o.slow; p.inv = 0.6; shake = 0.15;
+              snd.slip();
+              fx.push({ text: o.say, x: p.x, y: PY - 40, life: 1, color: '#bfe8ff', size: 18 });
+            }
           } else if (p.inv <= 0 && p.stun <= 0) {
             o.dead = !o.car; p.stun = 1.1; p.inv = 2.2; p.v = 0; p.crashes++; shake = 0.35;
             snd.crash();
@@ -436,9 +500,10 @@
   }
 
   // ---------- drawing ----------
-  function emoji(e, x, y, size, flip) {
+  function emoji(e, x, y, size, flip, rot) {
     ctx.save();
     ctx.translate(x, y);
+    if (rot) ctx.rotate(rot);
     if (flip) ctx.scale(-1, 1);
     ctx.font = `${size}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -462,6 +527,17 @@
     ctx.fillStyle = '#d8d4f055';
     const off = (camM * PX) % 60;
     for (let y = -60 + off; y < H; y += 60) ctx.fillRect(W / 2 - 3, y, 6, 30);
+    // uphill stretches: shaded road with chevrons
+    for (const [a, b] of hills) {
+      const y1 = PY - (b - camM) * PX, y0 = PY - (a - camM) * PX;
+      if (y0 < -20 || y1 > H) continue;
+      ctx.fillStyle = '#7a4a2a33'; ctx.fillRect(ROAD_L, y1, ROAD_R - ROAD_L, y0 - y1);
+      ctx.strokeStyle = '#ffcf8a55'; ctx.lineWidth = 4;
+      for (let y = y1 + 20; y < y0; y += 40) {
+        ctx.beginPath(); ctx.moveTo(W / 2 - 60, y + 14); ctx.lineTo(W / 2, y); ctx.lineTo(W / 2 + 60, y + 14); ctx.stroke();
+      }
+      text('上り坂', ROAD_L + 30, y0 - 10, 12, '#ffcf8a');
+    }
     // roadside: buildings, lights
     for (let i = Math.floor(camM / 6) - 2; i < camM / 6 + 8; i++) {
       const sy = PY - (i * 6 - camM) * PX;
@@ -582,8 +658,16 @@
         g.addColorStop(0, '#7fd8ff88'); g.addColorStop(1, '#7fd8ff00');
         ctx.fillStyle = g; ctx.fillRect(o.x - 24, sy - 24, 48, 48);
         emoji(o.e, o.x, sy, 26);
+      } else if (o.puddle) {
+        ctx.fillStyle = '#6fb6ff55';
+        ctx.beginPath(); ctx.ellipse(o.x, sy, 30, 16, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#bfe8ff88'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.ellipse(o.x - 6, sy - 3, 12, 5, 0, 0, Math.PI * 2); ctx.stroke();
+      } else if (o.deco) {
+        text(o.label, o.x, sy - 30, 11, '#ffd84f');
       } else {
-        emoji(o.e, o.x, sy, o.r * 2 + 4, o.vx > 0);
+        const bob = o.flap ? Math.sin(performance.now() / 60 + o.x) * 3 : 0;
+        emoji(o.e, o.x, sy + bob, o.r * 2 + 4, o.vx > 0, o.rot);
         if (o.text) text(o.text, o.x, sy - 24, 10, '#ffd84f');
       }
     }
@@ -591,6 +675,16 @@
     if (cy > -40 && cy < H + 40) drawCouple(W / 2 + 40, cy);
     if (!(p.inv > 0 && p.stun <= 0 && Math.floor(p.inv * 12) % 2)) drawPlayer(p.x, PY, p.tilt, p.crank, p.stun);
     if (p.boost > 0) emoji('💨', p.x, PY + 40, 20);
+    if (wind > 0) {
+      // streaks blowing toward the player
+      ctx.strokeStyle = '#dff3ff66'; ctx.lineWidth = 2;
+      const now = performance.now() / 1000;
+      for (let i = 0; i < 16; i++) {
+        const x = (i * 71 + Math.sin(i) * 40) % W;
+        const y = ((now * 700 + i * 137) % (H + 120)) - 60;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 8, y + 50); ctx.stroke();
+      }
+    }
     ctx.restore();
 
     drawHUD();
