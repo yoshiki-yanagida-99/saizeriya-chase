@@ -46,6 +46,27 @@
   #ctrl button.on { transform: translateY(calc(4px * var(--s))) scale(.95); filter: brightness(1.25); box-shadow: none; }
   #bMute { width: calc(40px * var(--s)); height: calc(40px * var(--s)); font-size: calc(18px * var(--s));
     background: #00000066; box-shadow: none; align-self: flex-end; margin-bottom: calc(12px * var(--s)); }
+
+  /* landscape: game stays portrait in the middle, controls move to the empty sides,
+     menus use the whole screen. body.wide and --cs are set from fit() */
+  body.wide #ctrl { --s: var(--cs); position: fixed; left: 0; right: 0; bottom: 0; height: auto;
+    align-items: flex-end; padding: 0 4vw 6vh; }
+  body.wide #bPedal { width: calc(120px * var(--s)); height: calc(120px * var(--s)); font-size: calc(26px * var(--s)); }
+  body.wide .arrow { width: calc(76px * var(--s)); height: calc(76px * var(--s)); }
+  body.wide #bMute { position: fixed; top: 12px; right: 12px; margin: 0; }
+  body.wide .overlay { position: fixed; border-radius: 0; overflow-y: auto; }
+  body.wide #title { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 360px);
+    justify-content: center; align-content: center; justify-items: center; gap: 14px 32px; }
+  body.wide #result .btns { flex-direction: row; max-width: 640px; }
+  body.wide #result .btns button { flex: 1; }
+  @media (max-height: 420px) {
+    body.wide h1 { font-size: 22px; }
+    body.wide .story { font-size: 12px; line-height: 1.6; }
+    body.wide .how { font-size: 11px; }
+    body.wide button { padding: 9px; font-size: 15px; }
+    body.wide #resTitle { font-size: 26px; }
+    body.wide #resText { font-size: 13px; line-height: 1.5; }
+  }
 </style>
 </head>
 <body>
@@ -126,9 +147,14 @@
     $('stage').style.width = W * s + 'px';
     $('stage').style.height = H * s + 'px';
     $('stage').style.setProperty('--s', s);
+    // landscape-ish with room beside the game for thumbs -> side controls
+    const wide = (window.innerWidth - W * s) / 2 > 130;
+    document.body.classList.toggle('wide', wide);
+    document.body.style.setProperty('--cs', Math.max(0.75, Math.min(1.5, window.innerHeight / 430)));
     fit.scale = s;
   }
   window.addEventListener('resize', fit);
+  window.addEventListener('orientationchange', () => setTimeout(fit, 250));   // iOS reports the new size late
   fit();
 
   // ---------- sound (all synthesized with WebAudio) ----------
