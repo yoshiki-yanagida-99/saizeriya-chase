@@ -106,12 +106,12 @@
   const ROAD_L = 50, ROAD_R = 310;
   const DIFFS = [
     // wind: chance per second of a headwind gust / hills: number of uphill stretches
-    { name: 'のんびりおさんぽ', coupleStart: 100, time: 50, gap: [20, 30], drink: 0.16, double: 0, wind: 0, hills: 0,
-      pool: { cone: 5, walker: 4, drunk: 3, cat: 3, car: 4 } },
-    { name: 'そわそわ早歩き',   coupleStart: 100, time: 32, gap: [15, 23], drink: 0.16, double: 0.15, wind: 0.04, hills: 1,
-      pool: { cone: 4, walker: 3, drunk: 3, cat: 3, car: 4, banana: 3, puddle: 3, delivery: 2 } },
-    { name: 'まちきれない',     coupleStart: 110, time: 28, gap: [8, 13],  drink: 0.24, double: 0.4, wind: 0.09, hills: 2,
-      pool: { cone: 3, walker: 2, drunk: 2, cat: 2, car: 4, banana: 3, puddle: 3, delivery: 4, pigeon: 3, gang: 2 } },
+    { name: 'のんびりおさんぽ', coupleStart: 100, time: 42, gap: [17, 26], drink: 0.16, double: 0.05, wind: 0.02, hills: 0,
+      pool: { cone: 5, walker: 4, drunk: 3, cat: 3, car: 4, banana: 2, puddle: 2 } },
+    { name: 'そわそわ早歩き',   coupleStart: 100, time: 30, gap: [12, 19], drink: 0.18, double: 0.25, wind: 0.06, hills: 2,
+      pool: { cone: 4, walker: 3, drunk: 3, cat: 3, car: 4, banana: 3, puddle: 3, delivery: 3, pigeon: 2 } },
+    { name: 'まちきれない',     coupleStart: 115, time: 26.5, gap: [7, 11], drink: 0.26, double: 0.5, wind: 0.12, hills: 3,
+      pool: { cone: 3, walker: 2, drunk: 2, cat: 2, car: 5, banana: 3, puddle: 3, delivery: 5, pigeon: 3, gang: 3 } },
   ];
 
   const cv = document.getElementById('c');
@@ -285,6 +285,15 @@
     function slip() { seq([[79, 0, .25]], 'triangle', 0.12, { slideTo: mtof(60) }); }
     function item() { seq([[72, 0, .08], [76, .06, .08], [79, .12, .08], [84, .18, .2]], 'square', 0.07); }
     function pass() { seq([[76, 0, .1], [81, .1, .25]], 'triangle', 0.15); }
+    // "BAN!" stinger for the intro: boom + crash + dissonant stab
+    function bang() {
+      if (!ac) return;
+      const t = ac.currentTime + 0.02;
+      kick(t, 1.4); kick(t + 0.02, 1.0);
+      noise(t, 0.6, 0.5, 150, sfx);
+      noise(t, 0.35, 0.3, 3000, sfx);
+      for (const n of [48, 54, 60, 63, 66]) tone(mtof(n), t, 0.9, 'sawtooth', 0.06, sfx, { lp: 2200, hold: 0.4 });
+    }
     function beep(high) { seq([[high ? 84 : 72, 0, high ? .4 : .15]], 'square', 0.08); }
     function setTension(x) { tension = Math.max(0, Math.min(1, x)); }
     function toggle() {
@@ -293,12 +302,13 @@
       if (master) master.gain.value = muted ? 0 : 0.8;
       return muted;
     }
-    return { init, startBGM, stopBGM, win, lose, crash, item, wind, slip, pass, beep, setTension, toggle, get muted() { return muted; } };
+    return { init, startBGM, stopBGM, win, lose, crash, item, wind, slip, bang, pass, beep, setTension, toggle, get muted() { return muted; } };
   })();
 
   // ---------- state ----------
   let state = 'title', diff = 1, D = DIFFS[1];
-  let p, couple, obs, fx, nextSpawn, t, countdown, endT, result, passedCouple, shake, lastBeep, wind, hills = [];
+  const INTRO = 3.2;   // "2人がいない⁉" slam before the countdown
+  let p, couple, obs, fx, nextSpawn, t, intro, countdown, endT, result, passedCouple, shake, lastBeep, wind, hills = [];
   const keys = {};
   let pointerX = null;
 
@@ -306,7 +316,7 @@
     p = { m: 0, x: W / 2, v: 0, stun: 0, inv: 0, boost: 0, crank: 0, tilt: 0, crashes: 0 };
     couple = { m: D.coupleStart, v: (GOAL - D.coupleStart) / D.time };
     obs = []; fx = [];
-    nextSpawn = 28; t = 0; countdown = 3; endT = 0; result = null; passedCouple = false; shake = 0; lastBeep = 4;
+    nextSpawn = 28; t = 0; intro = INTRO; countdown = 3; endT = 0; result = null; passedCouple = false; shake = 0; lastBeep = 4;
     wind = 0;
     // uphill stretches, spread out so they never overlap
     hills = [];
@@ -401,6 +411,12 @@
   // ---------- update ----------
   function update(dt) {
     if (state === 'play') {
+      if (intro > 0) {
+        intro -= dt;
+        shake = Math.max(0, shake - dt);
+        if (intro <= 0) snd.startBGM();
+        return;
+      }
       if (countdown > 0) {
         countdown -= dt;
         const n = Math.ceil(countdown);
@@ -714,7 +730,8 @@
     drawHUD();
     for (const f of fx) { ctx.globalAlpha = Math.min(1, f.life * 2); text(f.text, f.x, f.y, f.size, f.color); ctx.globalAlpha = 1; }
 
-    if (countdown > 0) {
+    if (intro > 0) drawIntro(INTRO - intro);
+    else if (countdown > 0) {
       text(String(Math.ceil(countdown)), W / 2, H / 2 - 60, 80, '#fff');
       text('「漕ぐ！」を連打！', W / 2, H / 2 + 10, 22, '#ffb3d9');
     } else if (t < 2) {
@@ -784,6 +801,32 @@
     text(s, x, y, size, color, 'center', false);
     ctx.restore();
   }
+  // intro: "2人がいない⁉" slams onto the screen with manga speed lines
+  function drawIntro(e) {
+    ctx.fillStyle = 'rgba(8,4,20,0.82)'; ctx.fillRect(0, 0, W, H);
+    const cx = W / 2, cy = H / 2 - 40;
+    ctx.strokeStyle = '#ffffff30'; ctx.lineWidth = 2;
+    for (let i = 0; i < 48; i++) {
+      const a = i / 48 * Math.PI * 2 + Math.sin(i * 7.3) * 0.05;
+      const r0 = 120 + Math.abs(Math.sin(i * 3.1)) * 60 + (e < 0.3 ? 0 : Math.sin(e * 20 + i) * 6);
+      ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+      ctx.lineTo(cx + Math.cos(a) * 520, cy + Math.sin(a) * 520); ctx.stroke();
+    }
+    const k = e < 0.18 ? 1 + (1 - e / 0.18) * 2.5 : 1;   // slam from 3.5x down to 1x
+    ctx.save();
+    ctx.translate(cx, cy); ctx.rotate(-0.06);
+    if (e > 0.18 && e < 0.5) ctx.translate(rand(-4, 4), rand(-4, 4));
+    ctx.shadowColor = '#ff2d55'; ctx.shadowBlur = 24;
+    ctx.lineWidth = 10; ctx.strokeStyle = '#000';
+    ctx.font = `900 ${48 * k}px "Hiragino Maru Gothic ProN","Hiragino Sans","Meiryo",sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.strokeText('2人がいない⁉', 0, 0);
+    ctx.fillStyle = '#ff4f6f'; ctx.fillText('2人がいない⁉', 0, 0);
+    ctx.restore();
+    if (e > 0.5) typeText('テーブルには「うちで飲み直すね♡」のメモ…', cx, cy + 70, 14, '#e8e4ff', e - 0.5);
+    if (e > 2.5) text('あいつの家に先回りしろ！', cx, cy + 115, 22, '#ffd84f');
+    if (e < 0.12) { ctx.fillStyle = `rgba(255,255,255,${1 - e / 0.12})`; ctx.fillRect(0, 0, W, H); }
+  }
   // typewriter: one character every 0.09s
   function typeText(s, x, y, size, color, since) {
     const n = Math.min(s.length, Math.floor(since / 0.09));
@@ -822,7 +865,9 @@
     diff = d; D = DIFFS[d];
     reset();
     state = 'play';
-    snd.startBGM();
+    snd.stopBGM();
+    snd.bang();
+    shake = 0.5;
     $('title').classList.add('hidden');
     $('result').classList.add('hidden');
     $('ctrl').classList.remove('hidden');
@@ -844,7 +889,7 @@
   });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) snd.stopBGM();
-    else if (state === 'play') snd.startBGM();
+    else if (state === 'play' && intro <= 0) snd.startBGM();
   });
 })();
 </script>
