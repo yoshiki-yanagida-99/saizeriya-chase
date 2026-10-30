@@ -79,9 +79,8 @@
         🔊 音が出ます（iPhoneはマナーモード解除）
       </p>
       <div class="btns">
-        <button data-diff="0">のんびりおさんぽ<small>2人は手つないでゆっくり</small></button>
-        <button data-diff="1">そわそわ早歩き<small>2人はちょっと急ぎ足</small></button>
-        <button data-diff="2">まちきれない<small>障害物だらけ＋強風＋坂道。ドリンクで巻き返せ</small></button>
+        <button data-diff="0">そわそわ早歩き<small>2人はちょっと急ぎ足</small></button>
+        <button data-diff="1">まちきれない<small>障害物だらけ＋強風＋坂道。ドリンクで巻き返せ</small></button>
       </div>
     </div>
 
@@ -106,8 +105,6 @@
   const ROAD_L = 50, ROAD_R = 310;
   const DIFFS = [
     // wind: chance per second of a headwind gust / hills: number of uphill stretches
-    { name: 'のんびりおさんぽ', coupleStart: 100, time: 42, gap: [17, 26], drink: 0.16, double: 0.05, wind: 0.02, hills: 0,
-      pool: { cone: 5, walker: 4, drunk: 3, cat: 3, car: 4, banana: 2, puddle: 2 } },
     { name: 'そわそわ早歩き',   coupleStart: 100, time: 30, gap: [12, 19], drink: 0.18, double: 0.25, wind: 0.06, hills: 2,
       pool: { cone: 4, walker: 3, drunk: 3, cat: 3, car: 4, banana: 3, puddle: 3, delivery: 3, pigeon: 2 } },
     { name: 'まちきれない',     coupleStart: 115, time: 26.5, gap: [7, 11], drink: 0.26, double: 0.5, wind: 0.12, hills: 3,
@@ -356,7 +353,7 @@
   })();
 
   // ---------- state ----------
-  let state = 'title', diff = 1, D = DIFFS[1];
+  let state = 'title', diff = 0, D = DIFFS[0];
   const INTRO = 3.2;   // "2人がいない⁉" slam before the countdown
   let p, couple, obs, fx, nextSpawn, t, intro, countdown, endT, result, passedCouple, shake, lastBeep, wind, hills = [];
   const keys = {};
