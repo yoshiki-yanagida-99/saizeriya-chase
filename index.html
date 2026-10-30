@@ -78,9 +78,9 @@
         🔊 音が出ます（iPhoneはマナーモード解除）
       </p>
       <div class="btns">
-        <button data-diff="0">かんたん<small>2人はのんびり歩き</small></button>
-        <button data-diff="1">ふつう<small>2人は早歩き</small></button>
-        <button data-diff="2">鬼<small>2人はもう待ちきれない</small></button>
+        <button data-diff="0">のんびりおさんぽ<small>2人は手つないでゆっくり</small></button>
+        <button data-diff="1">そわそわ早歩き<small>2人はちょっと急ぎ足</small></button>
+        <button data-diff="2">まちきれない<small>障害物だらけ！ドリンクで巻き返せ</small></button>
       </div>
     </div>
 
@@ -101,12 +101,12 @@
   const W = 360, H = 640;
   const PX = 20;              // 1m = 20px
   const PY = 450;             // player screen y (above the control bar)
-  const GOAL = 500;           // his apartment at 500m
+  const GOAL = 320;           // his apartment at 320m
   const ROAD_L = 50, ROAD_R = 310;
   const DIFFS = [
-    { name: 'かんたん', coupleStart: 150, time: 72, gap: [20, 30] },
-    { name: 'ふつう',   coupleStart: 150, time: 57, gap: [16, 25] },
-    { name: '鬼',       coupleStart: 170, time: 47, gap: [13, 21] },
+    { name: 'のんびりおさんぽ', coupleStart: 100, time: 50, gap: [20, 30], drink: 0.16, double: 0 },
+    { name: 'そわそわ早歩き',   coupleStart: 100, time: 35, gap: [16, 25], drink: 0.16, double: 0.1 },
+    { name: 'まちきれない',     coupleStart: 110, time: 31, gap: [9, 14],  drink: 0.24, double: 0.4 },
   ];
 
   const cv = document.getElementById('c');
@@ -314,18 +314,23 @@
   // ---------- spawning ----------
   const rand = (a, b) => a + Math.random() * (b - a);
   const pick = a => a[Math.floor(Math.random() * a.length)];
-  function spawn(m) {
-    const r = Math.random();
-    const x = rand(ROAD_L + 18, ROAD_R - 18);
-    if (r < 0.22) obs.push({ m, x, e: '🚧', r: 15 });
-    else if (r < 0.42) obs.push({ m, x, e: '🚶', r: 14, vx: pick([-35, 35]) });
-    else if (r < 0.55) obs.push({ m, x, e: '🕺', r: 15, wob: rand(0, 6), base: x, text: 'ヒック' });
-    else if (r < 0.72) {
+  function spawn(m, x = rand(ROAD_L + 18, ROAD_R - 18), noCar) {
+    if (!noCar && Math.random() < D.drink) { obs.push({ m, x, e: '🥤', r: 14, item: true }); return; }
+    const r = Math.random() * (noCar ? 0.6 : 1);
+    if (r < 0.25) obs.push({ m, x, e: '🚧', r: 15 });
+    else if (r < 0.45) obs.push({ m, x, e: '🚶', r: 14, vx: pick([-35, 35]) });
+    else if (r < 0.6) obs.push({ m, x, e: '🕺', r: 15, wob: rand(0, 6), base: x, text: 'ヒック' });
+    else if (r < 0.8) obs.push({ m, x, e: '🐈', r: 11, vx: pick([-90, 90]) });
+    else {
       const fromL = Math.random() < 0.5;
       obs.push({ m, x: fromL ? -40 : W + 40, e: pick(['🚗', '🚕', '🚙']), r: 22, car: true, vx: (fromL ? 1 : -1) * rand(150, 200), active: false });
+      return;
     }
-    else if (r < 0.84) obs.push({ m, x, e: '🐈', r: 11, vx: pick([-90, 90]) });
-    else obs.push({ m, x, e: '🥤', r: 14, item: true });
+    // harder modes: a second obstacle on the same row, leaving a gap to squeeze through
+    if (!noCar && Math.random() < D.double) {
+      const x2 = x < W / 2 ? rand(x + 90, ROAD_R - 18) : rand(ROAD_L + 18, x - 90);
+      spawn(m, x2, true);
+    }
   }
 
   // ---------- update ----------
