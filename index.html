@@ -192,33 +192,52 @@
       o.connect(g).connect(music); o.start(t); o.stop(t + 0.2);
     }
 
-    // chase loop: A minor, Am - G - F - E, speeds up as the couple nears the door
-    const BARS = [{ root: 45, q: [0, 3, 7] }, { root: 43, q: [0, 4, 7] }, { root: 41, q: [0, 4, 7] }, { root: 40, q: [0, 4, 7] }];
-    const LEAD = [69, -1, 72, -1, 71, 69, -1, 68, 69, -1, 76, -1, 74, 72, 71, -1];
+    // chase loop: Offenbach "Galop infernal" (天国と地獄, public domain), C major, 2/4.
+    // speeds up as the couple nears the door
+    const C = 72, D5 = 74, E = 76, F = 77, G = 79, A = 81, B = 83, C6 = 84, _ = 0;
+    const MEL = [   // [note, length in eighths], 4 eighths per bar, 16 bars
+      [C, 4],
+      [D5, 1], [F, 1], [E, 1], [D5, 1],   [G, 1], [_, 1], [G, 1], [_, 1],
+      [G, 1], [A, 1], [E, 1], [F, 1],     [D5, 1], [_, 1], [D5, 1], [_, 1],
+      [D5, 1], [F, 1], [E, 1], [D5, 1],   [C, 1], [C6, 1], [B, 1], [A, 1],
+      [G, 1], [F, 1], [E, 1], [D5, 1],    [C, 4],
+      [D5, 1], [F, 1], [E, 1], [D5, 1],   [G, 1], [_, 1], [G, 1], [_, 1],
+      [G, 1], [A, 1], [E, 1], [F, 1],     [D5, 1], [_, 1], [D5, 1], [_, 1],
+      [D5, 1], [G, 1], [E, 1], [F, 1],    [D5, 1], [G, 1], [E, 1], [F, 1],
+      [D5, 1], [G, 1], [C, 1], [_, 1],
+    ];
+    const MEL_AT = [];   // eighth index -> [note, len]
+    { let k = 0; for (const [n, l] of MEL) { MEL_AT[k] = [n, l]; k += l; } MEL_AT.length = k; }
+    const LEN = MEL_AT.length;
+    // oom-pah: [bass on beat 1, bass on beat 2, offbeat chord]
+    const CHORD = { C: [48, 43, [60, 64, 67]], G7: [43, 50, [59, 62, 65]] };
+    const PROG = ['C', 'G7', 'C', 'G7', 'G7', 'G7', 'C', 'G7', 'C', 'G7', 'C', 'G7', 'G7', 'G7', 'G7', 'C'];
     let tension = 0;
-    function playStep(s, t) {
-      const bar = BARS[(s >> 4) & 3], i = s & 15;
-      if (i % 4 === 0) kick(t, 0.9);
-      if (i === 4 || i === 12) noise(t, 0.14, 0.35, 1200, music);
-      if (i % 2 === 0 || tension > 0.6) noise(t, 0.03, i % 2 ? 0.08 : 0.14, 7000, music);
-      if (i % 2 === 0) {
-        const n = bar.root + (i % 8 === 4 ? 12 : 0);
-        tone(mtof(n - 12), t, 0.16, 'sawtooth', 0.22, music, { lp: 600 });
+    function playStep(s, t, e8) {
+      const bar = s >> 2, i = s & 3, [b1, b2, tri] = CHORD[PROG[bar % PROG.length]];
+      // drums: kick on the beat, snare on the offbeat, can-can energy
+      if (i % 2 === 0) kick(t, 0.7);
+      else noise(t, 0.08, 0.22, 1500, music);
+      noise(t, 0.03, 0.08, 7000, music);
+      // oom-pah accompaniment
+      if (i % 2 === 0) tone(mtof(i === 0 ? b1 : b2), t, e8 * 0.9, 'sawtooth', 0.2, music, { lp: 700 });
+      else for (const n of tri) tone(mtof(n), t, e8 * 0.6, 'square', 0.025, music, { lp: 2500 });
+      // melody
+      const m = MEL_AT[s];
+      if (m && m[0]) {
+        const dur = e8 * m[1] * (m[1] > 1 ? 0.95 : 0.8);
+        tone(mtof(m[0]), t, dur, 'square', 0.075, music, { lp: 4000, hold: 0.6 });
+        tone(mtof(m[0] - 12), t, dur, 'triangle', 0.08, music, { hold: 0.6 });
+        if (tension > 0.6) tone(mtof(m[0] + 12), t, dur, 'triangle', 0.04, music, { hold: 0.6 });
       }
-      const arp = bar.root + 24 + [...bar.q, 12][i % 4];
-      tone(mtof(arp), t, 0.09, 'square', 0.035, music, { lp: 3000 });
-      if (tension > 0.35 && LEAD[i] > 0 && (s >> 4) % 2 === 1) {
-        tone(mtof(LEAD[i] + ((s >> 4) === 3 ? -1 : 0)), t, 0.14, 'triangle', 0.09, music);
-      }
-      // alarm-like stab when it gets really close
-      if (tension > 0.8 && i === 0) tone(mtof(81), t, 0.25, 'square', 0.05, music, { slideTo: mtof(84) });
     }
     function sched() {
-      const bpm = 140 + 50 * tension;
+      const bpm = 132 + 48 * tension;   // quarter-note tempo
+      const e8 = 30 / bpm;
       while (next < ac.currentTime + 0.12) {
-        playStep(step, next);
-        next += 60 / bpm / 4;
-        step = (step + 1) % 64;
+        playStep(step, next, e8);
+        next += e8;
+        step = (step + 1) % LEN;
       }
     }
     function startBGM() {
