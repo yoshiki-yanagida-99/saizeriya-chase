@@ -250,7 +250,21 @@
       step = 0; next = ac.currentTime + 0.05; tension = 0;
       timer = setInterval(sched, 25);
     }
-    function stopBGM() { if (timer) clearInterval(timer); timer = null; }
+    function stopBGM() { if (timer) clearInterval(timer); timer = null; stopJingle(); }
+
+    // jingles get their own gain so a retry can cut them off
+    let jingle = null;
+    function newJingle() {
+      stopJingle();
+      jingle = ac.createGain(); jingle.connect(master);
+      return jingle;
+    }
+    function stopJingle() {
+      if (!jingle) return;
+      const g = jingle; jingle = null;
+      g.gain.setTargetAtTime(0, ac.currentTime, 0.05);
+      setTimeout(() => g.disconnect(), 500);
+    }
 
     function seq(notes, type, vol, opts) {
       if (!ac) return;
@@ -266,10 +280,46 @@
       seq([[72, b * 14, 1.1], [76, b * 14, 1.1]], 'triangle', 0.08);
       if (ac) for (let k = 0; k < 4; k++) noise(ac.currentTime + 0.05 + b * 14 + k * 0.05, 0.4, 0.15, 5000, sfx);
     }
+    // a distant bed creak: "gishi"
+    function creak(t, out, pitch) {
+      const o = ac.createOscillator(), f = ac.createBiquadFilter(), g = ac.createGain();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(240 * pitch, t);
+      o.frequency.exponentialRampToValueAtTime(360 * pitch, t + 0.09);
+      o.frequency.exponentialRampToValueAtTime(280 * pitch, t + 0.18);
+      f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 3;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.35, t + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+      o.connect(f).connect(g).connect(out);
+      o.start(t); o.stop(t + 0.25);
+      noise(t, 0.08, 0.04, 2500, out);
+    }
     function lose() {
-      // sad trombone: wah wah wah wahhhh
-      seq([[55, 0, .45], [54, .5, .45], [53, 1.0, .45]], 'sawtooth', 0.12, { lp: 1200, attack: 0.04, hold: 0.7 });
-      seq([[52, 1.5, 1.6]], 'sawtooth', 0.12, { lp: 1200, attack: 0.04, hold: 0.7, vibrato: true });
+      // cheesy late-night "mood" jazz (ii-V-I in C, 72bpm, swung), with creaks while the window glows pink
+      if (!ac) return;
+      const out = newJingle(), t0 = ac.currentTime + 0.05, beat = 60 / 72;
+      const CH = [[38, [53, 57, 60, 64]], [43, [53, 59, 64, 69]], [36, [52, 55, 59, 62]], [45, [55, 61, 64, 70]]];
+      CH.forEach(([root, notes], i) => {
+        const tc = t0 + i * 2 * beat;
+        for (const n of notes) {   // electric-piano-ish chord, re-struck on the swung "and" of 2
+          tone(mtof(n), tc, beat * 1.9, 'sine', 0.045, out, { hold: 0.3 });
+          tone(mtof(n) * 2, tc, beat * 0.8, 'triangle', 0.008, out);
+          tone(mtof(n), tc + beat * 1.66, beat * 0.4, 'sine', 0.025, out);
+        }
+        tone(mtof(root), tc, beat * 0.9, 'triangle', 0.25, out, { hold: 0.6 });
+        tone(mtof(root + 7), tc + beat, beat * 0.9, 'triangle', 0.2, out, { hold: 0.6 });
+        for (const k of [0, 0.66, 1, 1.66]) noise(tc + k * beat, 0.06, k % 1 ? 0.03 : 0.05, 8000, out);
+      });
+      // breathy sax line
+      const SAX = [[62, 0, .5], [65, .5, .5], [69, 1, 1.5], [67, 2.5, .5], [65, 3, .5], [64, 3.5, .5],
+                   [62, 4, 2], [64, 6, .66], [67, 6.66, .66], [70, 7.33, 1.2]];
+      for (const [n, at, d] of SAX) {
+        tone(mtof(n), t0 + at * beat, d * beat, 'sawtooth', 0.05, out, { lp: 1400, attack: 0.07, hold: 0.7, vibrato: d >= 1 });
+        noise(t0 + at * beat, 0.12, 0.012, 3000, out);
+      }
+      // "gishi... gishi..." timed with the pink window in the lose scene
+      [1.85, 2.2, 2.5, 2.75].forEach((s, k) => creak(t0 + s, out, k % 2 ? 1.12 : 1));
     }
     function crash() {
       if (!ac) return;
@@ -778,6 +828,9 @@
         ctx.globalAlpha = Math.max(0, 1 - (T - 1.8) / 1.8);
         emoji('💕', hx, hy - 30 - (T - 1.8) * 30, 22);
         ctx.globalAlpha = 1;
+      }
+      for (const [s, dx] of [[1.85, -16], [2.2, 14], [2.5, -10], [2.75, 18]]) {
+        if (T > s && T < s + 0.3) text('ｷﾞｼｯ', hx + dx, hy - 52, 12, '#ffb3d9');
       }
       if (T > 3.0) text('ﾊﾟﾁｯ…', hx, hy - 30, 14, '#ffd84f');
       const py = 700 - Math.min(T, 2.2) * 70;
